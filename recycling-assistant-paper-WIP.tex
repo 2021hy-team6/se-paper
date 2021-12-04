@@ -731,6 +731,58 @@ This section is only functional if database is enabled and set up, as it require
 \subsection{Exiting the Application}
 The user may simply lick the top-right "x" button to close the application. However, as some of the windows or popup menus that appear may be modal (ie. Settings), the user will have to close those first before being able to close the application normally.~\\
 
+\newpage
+\subsection{Dashboard Charts}
+In the dashboard window, it shows the number of detected objects for each hour and each super categories. The graph contains not all super categories, but displays top five most recognized super categories in a day.~\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/chart_hourly_detected.eps}
+    \caption{Hourly Detected Objects Chart}
+\end{figure}~\\
+
+Usage counts collects the overall number of detected images for a week. The images without any detection will be excluded in this statistics. It also contains today's records until the time of stats.~\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/chart_usage_counts.eps}
+    \caption{Weekly Usages Chart}
+\end{figure}~\\
+
+Among the detected objects today, recyclable rates shows the percentage of recyclable objects for each hour. The number of objects which is marked as a recyclable ones is divided by the overall detection count. If an object has no label whether it is recyclable or not, those kinds of counts will be discarded in this statistics.~\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/chart_recyclable_rate.eps}
+    \caption{Recyclable Rates Chart}
+\end{figure}~\\
+
+\newpage
+Detection time chart tracks how long it takes to make an prediction for a scanned image in the precision of a millisecond. This statistics contains the average of these times for each hour of today. If there is no detection in some hours, the graph won't contain those hours in x axis.~\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/chart_detection_time.eps}
+    \caption{Detection Time Chart}
+\end{figure}~\\
+
+\newpage
+\subsection{Dashboard Tables}
+Monthly comparison table compares this month's scanned counts for each super category with the last month's one. This charts shows five super categories with the most counts at this month. The differences of numbers between two months will be also shown.~\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/chart_monthly_comp.eps}
+    \caption{Monthly Comparisons Table}
+\end{figure}~\\
+
+Most detected objects table shows the cumulative counts of recyclable objects in this year. This list will have top 10 most detected objects' names with their super category. It also calculates the proportions of scanned objects, divided by the number of overall scanned images.~\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/chart_most_detected.eps}
+    \caption{Most Detected Objects Table}
+\end{figure}~\\
 
 \newpage
 \section{Architecture & Implementation}
