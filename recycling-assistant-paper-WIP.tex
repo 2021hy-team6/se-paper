@@ -195,7 +195,7 @@ The application should be able to handle real-time detection, as well as be able
 \newline
 \subsection{Object Detection}
 
-The application, on successful object detection, should draw a bounding box, or mask around the object and output that result. If multiple objects are detected in the frame, they must also be drawn appropriately.
+The application, on successful object detection, should draw a bounding box around the object and output that result. If multiple objects are detected in the frame, they must also be drawn appropriately.
 \newline
 \subsection{Classification/Categorization}
 
@@ -217,7 +217,7 @@ This database should also be able to be accessed by the user in order to draw an
 \subsection{Statistics}
 Basic statistics should be available, such as the overall detection count, detection count per category, etc. There should also be a separate set of statistics for the session's detections.
 
-A statistics menu should be available via an UI element on the main screen. The user should be able to reset their statistics as well.
+A statistics menu should be available via an UI element on the main screen.
 \newline
 \subsection{Educational Feedback}
 The application should be able to add a general explanation to each output, educating the user on why a certain object is not recyclable, or why it is not recyclable in its current state.
@@ -262,7 +262,7 @@ Lim Hongrok & Back-End &
 
 \newpage
 
-\section{Design \& Architecture}
+\section{General Approach}
 At its core, the application handles a real-time video input through either connected network camera, or a physically connected camera (eg. USB). Through OpenCV, the application then analyzes the input and draws a bounded box around the identified object based on its stored/frozen model.\\
 
 The application then returns feedback through text on whether the object is recyclable, or belongs in general waste. If the item is recyclable, it returns feedback based on which type of recycling it belongs in alongside the confidence level. In the event that the item is unknown, or does not return a valid result, the application will either direct the user to the general waste, or return feedback that the application is unsure.\\
@@ -325,7 +325,8 @@ Though each of our members have different development environments, an example o
 
 \textbf{Model Training Environment:}
 \begin{itemize}
-\item Computation: 1 GPU, 4 vCPUs
+\item CPU: 4 vCPUs
+\item GPU: NVIDIA T4 Tensor GPU
 \item RAM: 16GB
 \item Storage: 125GB
 \item Networking: 25Gbps Peak
@@ -372,10 +373,10 @@ We will be looking at leveraging various, and multiple frameworks for this proje
 \hline
 \textbf{Software} & \textbf{\textit{License}}& \textbf{\textit{Description \& Explanation}}\\
 \hline
-Mask-RCNN Tensorflow\textsuperscript{1} & Apache-2.0 &
-Mask R-CNN is an object recognition algorithm with extra data points allowing the segmenting and masking of detected objects. It uses FPNs, or Feature Pyramid Networks in order to improve accuracy and a Region Proposal Network (RPN) in order to reduce inference time. \newline
+SSD MobileNet v2 + Tensorflow\textsuperscript{0}\textsuperscript{1} & Apache-2.0 &
+SSD MobileNet v2 is an object recognition algorithm that is fast - using a "single shot" to detect multiple objects. This will fit our necessity for speediness, especially once frozen for inference, as we are going for real-time detection. 
 
-This specific fork or implementation of Mask-RCNN is from Amazon Web Services, with a focus on performance. This will allow us to be able to also segment the detected objects from the frame.
+We will be following and slightly modifying a guide in order to streamline the process of training and exporting this model.
 \\ \hline
 OpenCV \textsuperscript{2} & Apache-2.0 &
 OpenCV is a software library that focuses on computer vision. It contains support for ML model execution, as well as various image manipulation functions.\newline
@@ -415,7 +416,8 @@ rapidjson will be used in order to handle (read/write) settings and configuratio
 \end{table}
 
 \begin{thebibliography}{00}
-\bibitem{b1} “Mask-RCNN-Tensorflow” AWS, https://github.com/aws-samples/mask-rcnn-tensorflow/
+\bibitem{b0} “Training SSD MobileNet v2 with TACO dataset” Bouwe Ceunen, https://www.kaggle.com/bouweceunen/training-ssd-mobilenet-v2-with-taco-dataset/
+\bibitem{b1} “Mask-RCNN-Tensorflow” AWS, https://github.com/tensorflow/
 \bibitem{b2} “OpenCV” OpenCV, https://github.com/opencv/opencv/
 \bibitem{b3} "Qt" Qt, https://www.qt.io/
 \bibitem{b4} "PostgreSQL" PostgreSQL, https://www.postgresql.org/
@@ -448,7 +450,7 @@ However, we will be altering the training data slightly, due to the TACO dataset
 \newline\newline
 The TACO dataset also contains enough categories that we feel would cover general use, such as plastic film, plastic bottle, cans, glass, etc - which is commonly seen waste that falls into recycling categories.
 \newline
-In addition, as it contains segmentation support, we would not need to separately perform segmentation masking - which would save us a lot of time compared to manually annotating and segmenting several hundreds to thousands of images, and allow us to use it directly with Mask R-CNN.
+In addition, the TACO dataset seems to be centered around the topic of identifying different types of objects. While other datasets seem to go for more of a "litter detection dataset" binary classification (litter or not litter), the TACO dataset goes for a more specific classification approach. This will allow us to provide more specific tips to each category of recycling.
 
 \newpage
 \section{Specifications}
@@ -467,18 +469,18 @@ Once the "Start" button is clicked, they will be brought to the next menu. Howev
 Upon application start, the settings/config file will be read. The settings/config file will read for and expect the following JSON values:~\\
 
 \begin{itemize}
-\item default\_source\_index: int
-\item default\_source\_index: string
-\item default\_source\_type: int
+\item source\_type: int
+\item source\_index: int
+\item source\_str: string
 \item skip\_start: bool
-\item model\_source: string
-\item db\_usage: bool
-\item db\_conn\_string: string
-\item db\_user: string
-\item db\_pw: string
+\item dashboard\_link: string
+\item db\_enabled: bool
+\item db\_conn\_str: string
 \end{itemize}~\\
 
-This will then be saved in memory in the form of an unordered\_map, for internal reference within the application.~\\
+The application will perform a rudimentary valuation check. Since source\_type or source\_index are values that cannot be negative, if it detects this, then it will throw an invalid config error, and redirect the user to regenerate a new base config. This will then be loaded in memory in for internal reference within the application.
+
+Whenever settings are changed, the config file should reflect those changes, also keeping a backup version of the config file as a contingency. As a result, if the settings are corrupted, the user may be able to recover their older settings from the backup file.~\\
 
 \subsection{Reading the Configuration File}
 The settings/config file will be stored in the directory under the name "settings.json", in the JSON format. The conditions that would cause an error are the following:~\\
@@ -508,97 +510,180 @@ If the JSON does not contain the required objects, or has an unexpectedly incorr
 If the JSON does not contain valid values in its objects. The validation process of the JSON Values will be explained in a later specification.
 \end{quote}~\\
 
-In the case of an error, the user will be directed to the Settings Not Found menu, in specification C: Settings Not Found.~\\
+In the case of an error, the user will be directed to the Settings Not Found menu, in specification C: Settings Not Found, so that they have the option to regenerate a new config file.~\\
 
 \subsection{Settings Not Found}
 If the application does not detect the settings/config file, or if it is either corrupted or unreadable (more details in specification C: Reading the Configuration File), the user will be notified that the application will launch with default parameters, while also being notified that it will generate a new Config file. This means that any existing file will be overwritten and regenerated with default values.~\\
 
-If the user accepts (OK button), the application will proceed with the creation of a new Config file, while the user may also reject (Cancel button) to return to the previous screen, so that they may either try to manually adjust the JSON file, or save the parameter values before the file is overwritten.
+If the user accepts (OK button), the application will proceed with the creation of a new Config file, while the user may also reject (Cancel button) to return to the previous screen, so that they may either try to manually adjust the JSON file, or save the parameter values before the file is overwritten.~\\
 
-\begin{figure}[h]
+Then, the user will be directed to the detection/scanner screen, if they chose to generate a new config. 
+
+\begin{figure}[!h]
     \centering
     \includegraphics[width=0.48\textwidth]{images/settings_alert.eps}
-    \caption{Settings Not Found}
+    \caption{Settings Not Found Screen}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/nothing_detected.eps}
+    \caption{User Proceeds with Generation of new Config (Presses OK), Proceeding to Scanner Screen}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/start.eps}
+    \caption{User Denies Generation of new Config (Presses Cancel), Reverting to Start Screen}
 \end{figure}~\\
 
 \newpage
-\subsection{Failure to Connect}
-In the event that the application was not able to connect to the camera (usually occurring if the camera is not connected or offline), the user will be notified with a message box stating that there was an issue connecting to the camera.
+\subsection{Failure to Connect to the Camera}
+In the event that the application was not able to connect to the camera (usually occurring if the camera is not connected or offline), the user will be notified with a message box stating that there was an issue connecting to the camera. This message box will be modal, and prevent the user from interacting from the background window - they must agree or close the message box to re-assume control of the main window.~\\
 
-They will see an empty detection screen, but will be able to access the settings menu in the top left corner (status bar). This will allow the user to adjust their set source.~\\
+They will see an empty detection screen, but will be able to access the settings menu in the top left corner (status bar). This will allow the user to adjust their set source, change other settings, and reset their connection, to try and re-establish a connection to the camera.~\\
 
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.48\textwidth]{images/camera_source_error.eps}
-    \caption{Dialog Window Notification}
-\end{figure}~\\
+    \caption{Dialog Window Notification, Modal - Disables Main Window, but Keeps it Visible in the Background}
+\end{figure}
+
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.48\textwidth]{images/camera_source_error_2.eps}
     \caption{After Dismissing Dialog Window Notification}
+\end{figure}
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/reconnect_to_camera_context.eps}
+    \caption{Reconnect Context Menu Action, allowing the user to restart or retry the Camera Connection}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/nothing_detected.eps}
+    \caption{Successful Reconnect (Normal Detection/Scanner Screen)}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/camera_source_error.eps}
+    \caption{Unsuccessful Reconnect (Same Error Flow as Figure 5)}
 \end{figure}~\\
 
 \newpage
 \subsection{Detection/Scanner Screen}
-The detection/scanner element takes up the vast majority of the application window estate. In this, a live camera feed is shown, based on the value assigned to the camera. ~\\
+The detection/scanner element takes up the vast majority of the application window estate. In this screen, a live camera feed is shown, based on the connection value assigned to the camera.~\\
 
-The default value is camera index 0 (the device index - 0 refers to the default camera for the system), however it can be assigned to another index, or to a video (ie. mp4 or webcam stream) through the settings menu.~\\
+The default connection value is camera index 0 (the device index - 0 refers to the default camera for the system), however it can be assigned to another index, or to a video (ie. mp4 or webcam stream) through the settings menu. For a webcam stream, a valid webcam stream link must be provided.~\\
 
-The image format should be correctly converted (from OpenCV's BGR output to RGB) for display in the application, and the webcam stream should not prevent or block the user from using any other user interface elements. In addition, the output frames will be appropriately resized to the window size in a 16:9 ratio.
+The image format should be correctly converted (from OpenCV's BGR output to RGB) for display in the application, and the webcam stream should not prevent or block the user from using any other user interface elements. In addition, the output frames will be appropriately resized to the window size in a 16:9 ratio.~\\
 
-\begin{figure}[h]
+Unless something is detected, no bounding boxes or detection-related text will be shown. On successful detection however, bounding boxes and detection-related text will be shown.
+
+\begin{figure}[!h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/scanner.eps}
-    \caption{Scanner Main Screen}
+    \includegraphics[width=0.48\textwidth]{images/nothing_detected.eps}
+    \caption{Scanner Main Screen - Nothing Detected Yet}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/successful_detection.eps}
+    \caption{Scanner Main Screen - Object Detected}
 \end{figure}~\\
 
+\newpage
 \subsection{Object Detection}
-When an object is detected by the model, a bounding box will be drawn on the object, alongside what it recognized, and the confidence level. In addition, the recycling category will be displayed. Unknown objects or the background should not be detected.~\\
+When an object is detected by the model, a bounding box will be drawn on the object, alongside what it recognized, and the confidence level. In addition, the recycling category and any special instructions will be displayed. Unknown objects or the background should not be detected.~\\
 
-\begin{figure}[h]
+When an object class as a tip attached in the classification file, it will be shown alongside the detection in the text. For example, the tip to not pierce an aerosol canister, or not to crush an aluminum drink can. However, if the object does not have a tip attached, such as the metal bottle cap, then no tip will be shown - only the detected object name, and the recycling class (Metal).
+
+\begin{figure}[!h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/object_detected.eps}
-    \caption{-Placeholder- Successful Detection Frame}
+    \includegraphics[width=0.48\textwidth]{images/nothing_detected.eps}
+    \caption{Scanner Main Screen - Nothing Detected Yet}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/successful_detection.eps}
+    \caption{Scanner Main Screen - Object Detected, Tip Provided}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/aerosol_detected.eps}
+    \caption{Scanner Main Screen - Object Detected, Tip Provided}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/bottlecap_detected.eps}
+    \caption{Scanner Main Screen - Object Detected, No Tip to Provide}
 \end{figure}~\\
 
+\newpage
 \subsection{Settings Menu}
-When the user clicks on "Adjust Settings" in the Settings Context Menu Button, they will be presented with a Settings Menu Window. In the window, they will see three tabs - one for OpenCV Settings, one for Application Settings, and one for Database Settings.~\\
+When the user clicks on "Adjust Settings" in the Settings Context Menu Button, they will be presented with a modal Settings Menu Window. In the window, they will see three tabs - one for OpenCV Settings, one for Application Settings, and one for Database Settings.~\\
 
-\begin{figure}[h]
+The Settings Menu's options should be synced with the actual config file values - the user's settings or the config file values should be represented in the Settings Menu, and any changes made in the Settings Menu should be immediately saved to the config file.~\\
+
+\begin{figure}[!h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/settings_context_menu.eps}
+    \includegraphics[width=0.48\textwidth]{images/adjust_settings.eps}
     \caption{Settings Context Menu Option}
 \end{figure}~\\
 
-\subsection{OpenCV Settings}
-This tab will contain settings related to OpenCV. The user will be able to choose between whether they would like to set their camera/stream based on the device index, or an IP address in the case of a webcam. The radio buttons will force the user to select one, and not both.~\\
+\newpage
+\subsubsection{OpenCV Settings}
+This tab will contain settings related to OpenCV. The user will be able to choose between whether they would like to set their camera/stream based on the device index, or an IP address in the case of a webcam. The radio buttons will force the user to select one, and not both, but should not delete the saved value, allowing the user to store values - for easy switching between physically connected video sources, or web sources.~\\
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/settings_1.eps}
+    \includegraphics[width=0.48\textwidth]{images/opencv_settings.eps}
     \caption{OpenCV Settings Tab}
 \end{figure}~\\
 
 \subsection{Application Specific Settings}
-This tab will contain settings related to the application. The user will be given the option to "Skip Start Sequence", which would make application starts skip directly to the detection screen.
+This tab will contain settings related to the application. The user will be given the option to "Skip Start Sequence", which would make application starts skip directly to the detection screen. However, on startup, if the config file is deemed to be invalid, then the user will be sent to the "Settings Not Found" screen. 
 
-In addition, advanced users may also specify if they would like to use a custom model source file.~\\
+As a result, on application startup, the config file will be checked for validity with priority, before checking the value of the "Skip Start Sequence" setting.~\\
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/settings_2.eps}
+    \includegraphics[width=0.48\textwidth]{images/app_settings.eps}
     \caption{Application Settings Tab}
 \end{figure}~\\
 
-\subsection{Database Settings}
-This tab will contain settings related to the database. In this, the user may simply decide to choose to disable, or enable, the usage of database with regards to scans. The user may choose to do this if they would prefer not to have a database instance running, have no need for a database, or for privacy reasons.
+\subsection{Classifications Handling}
+A classifications file will read upon application startup. The classification file contains the following values:
 
-While advanced users have the option to edit database related settings directly in the JSON, this will not be provided in the settings menu.~\\
+\begin{itemize}
+\item super\_categories: object (structure below)
+\begin{itemize}
+\item index: int
+\item recyclable: bool
+\end{itemize}
+\item classifications: array (structure below)
+\begin{itemize}
+\item int (recycling category)
+\item string (recycling tip)
+\end{itemize}
+\end{itemize}~\\
+
+Upon startup, the classifications are loaded into an internal map to be referred to after inference. In addition, on database connection initiation (based on the db\_enabled setting), the existing database supercategory table is overwritten, and is loaded with the supercategory data from the classifications file.\\
+
+\subsection{Database Settings}
+This tab will contain settings related to the database. In this, the user may simply decide to choose to disable, or enable, the usage of database with regards to scans. The user may choose to do this if they would prefer not to have a database instance running, have no need for a database, or for privacy reasons or convenience reasons (ie. choosing not to run the dashboard).~\\
+
+Specific settings such as the database connection string will only be accessible through direct editing of the config file, as the values are automatically set in relation to the separate setup stage for the database.~\\
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/settings_3.eps}
+    \includegraphics[width=0.48\textwidth]{images/db_settings.eps}
     \caption{Database Settings Tab}
 \end{figure}~\\
 
@@ -612,21 +697,574 @@ When the user clicks on "View Statistics" in the Statistics Context Menu Button,
 \end{figure}~\\
 
 \subsection{Session Statistics}
-In the session stats window, they will see an "Overall Scan Count", and a "Categorical Scan Count". Overall scan count is self-explanatory - it is the number of times any object was scanned. Categorical scan count is the number of times an object from a category was scanned, divided by the overall scan count. The resulting percentage number is then rounded, and then fed into the progress bar.~\\
+In the session stats window, they will see an "Overall Scan Count", and a "Categorical Scan Count". Overall scan count is self-explanatory - it is the number of times any object was scanned. Categorical scan count is the number of times an object from a category was scanned, divided by the overall scan count. The resulting percentage number is then rounded, and then fed into the progress bar. The categories will be divided into the following:~\\
+
+\begin{itemize}
+\item Plastic
+\item Aluminium
+\item Glass
+\item Other
+\end{itemize}~\\
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/statistics_session.eps}
-    \caption{Database Settings Tab}
+    \includegraphics[width=0.48\textwidth]{images/empty_session_stats.eps}
+    \caption{Unfilled Session Stats}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/filled_session_stats.eps}
+    \caption{Filled Session Stats}
 \end{figure}~\\
 
+\newpage
 \subsection{Overall Statistics}
-Similarly to the Session Statistics, the user will see an "Overall Scan Count", and a "Categorical Scan Count". However, this section is only functional if database is enabled, as it requires database data in order to operate.~\\
+This section is only functional if database is enabled and set up, as it requires database data in order to operate. It shows a button that will automatically launch the user's browser and direct them to the set dashboard for more in-depth information.~\\
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.48\textwidth]{images/statistics_overall.eps}
-    \caption{Database Settings Tab}
+    \includegraphics[width=0.48\textwidth]{images/stats_overall.eps}
+    \caption{Overall Stats Tab}
 \end{figure}~\\
+
+\subsection{Exiting the Application}
+The user may simply lick the top-right "x" button to close the application. However, as some of the windows or popup menus that appear may be modal (ie. Settings), the user will have to close those first before being able to close the application normally.~\\
+
+
+\newpage
+\section{Architecture & Implementation}
+\subsection{Overall Architecture & Design}
+Our overall architecture consists of several major modules. At the base of our architecture lies the trained TACO model, frozen for usage in a .pb and .pbtxt format to be fed into OpenCV's DNN Module. This is linked accordingly with our C++ back-end, which is in turn, linked to our C++ Qt front-end.\\
+
+Upon application startup, two JSON files will be read from - the config file, and the classifications file. While the config file is required to store/load user settings, the classifications file is used to store data on the various categories of objects, and respective classifications and tips. As such, on startup, the config file is read, and the settings loaded into an struct, to be referred to internally. In addition, if the database is enabled in the settings, database related information is loaded as well - the classifications are loaded into an internal map to be referred to post-inference. In addition, on database connection initiation (based on the db\_enabled setting), the existing database supercategory table is overwritten, and is loaded with the supercategory data from the classifications file.\\
+
+In our back-end, the core centerpiece is the frozen model that is used for detections. Once a detection is triggered, an insertion transaction is conducted through a SQL wrapper class. However, as it is a real-time stream, some distinction has to be made between frames to make sure that an insertion does not occur on every single frame. As such, a rudimentary algorithm prevents this from occurring - with a frame-based cooldown being required between new detections for these detection insertion events\\
+
+A frozen Tensorflow model is used in order to optimize inference time, with the underlying machine learning model being in the SSD MobileNet v2 architecture. The network returns several values, including the coordinates for the bounding box, the index for the detected object, and the confidence score. The main back-end handles the OpenCV instance, drawing bounding boxes around the detected object, and returning information such as what object was detected per the DNN. This information is also inserted into the database.\\
+
+The application only does INSERT queries into the SQL, for which PostgreSQL was used. This is because the actual full statistics side (aside from the basic session statistics), is handled by the dashboard.\\
+
+The front-end, is where the final frame - post-inference, with the object marked, is displayed. This is heavily intertwined with the front-end's Qt instance, as Qt's UI Labels are used in order to display the result of the inference (object name, class type, confidence, etc). In addition, as Qt is the main UI framework, it is used to handle the majority of user interaction, application side, such as the handling of settings, or showing session scan stats.\\
+
+The following diagram shows our overall architecture and application ecosystem for this project.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/app_diagram.eps}
+    \caption{Overall System Diagram}
+\end{figure}~\\
+
+\subsection{Database Architecture}
+The following diagram shows our architecture for the database, and the source of the database data (insertion sources). Note that the dashboard is not showcased here, as the dashboard mainly only does selections from the database, and is not a source of data.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/db_diagram.eps}
+    \caption{Database Diagram}
+\end{figure}
+
+\subsection{Directory Structure}
+The following diagram shows our file directory structure for the application.
+
+\begin{table}[htbp!]\normalsize
+\begin{center}
+\begin{tabular}{|p{1.5cm}|p{2.2cm}|p{3.9cm}|}
+\hline
+\textbf{Class} & \textbf{\textit{Directory}}& \textbf{\textit{Filename}}\\
+\hline
+Classifier & recycleAssistant & classifier.h
+\newline
+classifier.cpp
+\\ \hline
+Config Handler & recycleAssistant & confighandler.h
+\newline
+confighandler.cpp
+\newline
+\\ \hline
+Database Handler & recycleAssistant & databasehandler.h
+\newline
+databasehandler.cpp
+\newline
+\\ \hline
+Main & recycleAssistant & main.cpp
+\newline
+\\ \hline
+OpenCV Handler & recycleAssistant & opencv\_handler.h
+\newline
+opencv\_handler.cpp
+\newline
+\\ \hline
+RecyleM8 & recycleAssistant & recyclem8.h
+\newline
+recyclem8.cpp
+\newline
+recyclem8.ui
+\newline
+\\ \hline
+Settings Menu & recycleAssistant & settingsmenu.h
+\newline
+settingsmenu.cpp
+\newline
+settingsmenu.ui
+\newline
+\\ \hline
+Statistics Menu & recycleAssistant & statisticsmenu.h
+\newline
+\newline
+statisticsmenu.cpp
+\newline
+\newline
+statisticsmenu.ui
+\newline
+\\ \hline
+Config Files & build &
+classifications.json
+\newline
+\newline
+config.json
+\newline
+config.json\_backup
+\newline
+\\ \hline
+CMake & recycleAssistant, cmake & CMakeLists.txt
+\newline
+\newline
+Findrapidjson (CMake)
+\newline
+\\ \hline
+Libraries & dependencies & rapidjson (module)
+\newline
+\newline
+spdlog (module)
+\newline
+\\ \hline
+Model & build &
+frozen\_taco.pb
+\newline
+frozen\_taco.pbtxt
+\newline
+\\ \hline
+\end{tabular}
+\label{tab1}
+\end{center}
+\end{table}
+
+
+\subsection{Classifier}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/classifier_uml.eps}
+    \caption{Classifier Class Diagram}
+\end{figure}~\\
+
+The Classifier Class mainly handles the classification mapping of objects. It loads data from the classifications.json file, and loads the data into a map and a vector, both of which will be referred to post-inference.\\
+
+
+\textbf{classifications.json format example}~\\
+
+The classifications.json file is the file in which the Classifier pulls all of its information from. The structure is as the following:
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/sourcecode/classifications_json.eps}
+    \caption{classifications.json sample}
+\end{figure}
+
+As noted previously, the structure follows the following format:
+
+\begin{itemize}
+\item super\_categories: object (structure below)
+\begin{itemize}
+\item index: int
+\item recyclable: bool
+\end{itemize}
+\item classifications: array (structure below)
+\begin{itemize}
+\item int (recycling category)
+\item string (recycling tip)
+\end{itemize}
+\end{itemize}~\\
+
+This is the format that the Classifier expects, and will throw an error per the JSON reading/parsing code, if the format is not followed.~\\~\\
+
+
+\textbf{classifier.h}~\\
+
+The Classifier Header defines the structure of the Classifier class. It receives a filename in the constructor, but defaults to "classifications.json".
+
+It then declares two structs, one of which is SuperCategory. This declares the ultimate recycling class, such as "Plastic", and a bool that flags if it is recyclable or not. The other struct, RecycleInfo, is per object, and declares which superclass, or supercategory it belongs to, alongside any special\_instructions that was defined in the classifications.json file. 
+
+It defines the functions in the class, namely, initial\_file\_load(), load\_file\_values(), classify(int index), and get\_supercategorymap(), which are all public, and accessible externally.
+
+The private variables are the data map and vectors, as they should not be modified outside of the class.~\\~\\
+
+
+\textbf{classifier.cpp}~\\
+
+In the constructor, an initialization list moves the copied argument filename into the private member \_filename. 
+
+Then, the initial\_file\_load() function is defined, returning a bool on whether the file is valid. It returns a false if the file does not exist, and also returns a false when rapidjson encounters a parse error.
+
+It "pre-loads" the value into a private rapidjson::Document object, so that it does not need to be loaded, or read/parsed twice later.
+
+In the load\_file\_values() function, the values are read from the private document object. It gets the objects for both the supercategories object, and the classifications object, and parses through both of them, while packaging the data into a struct, and emplacing that into the private map or vector.
+
+The classify function and the get\_supercategorymap exist as functions to keep the actual vector and the map private. They return the object at provided index in the vector, and a copy of the map, respectively.~\\~\\
+
+
+\subsection{ConfigHandler}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/confighandler_uml.eps}
+    \caption{ConfigHandler Class Diagram}
+\end{figure}~\\
+
+The ConfigHandler Class mainly handles the Configuration File - both the reading/parsing, and writing parts. It loads data from the config.json file, and loads it into a defined Settings struct.\\
+
+
+\textbf{confighandler.h}~\\
+
+The ConfigHandler Header defines the structure of the ConfigHandler class. It receives a filename in the constructor, that is used to refer to the config file.
+
+It then declares one struct, and an object of that struct, used for settings related variables.
+
+Several functions are also declared, initial\_file\_load(), populate\_with\_defaults(), save\_file(bool create\_new), and load\_file\_values().
+
+Two private variables are declared - a \_filename string, and a \_doc rapidjson::Document object.~\\~\\
+
+
+\textbf{confighandler.cpp}~\\
+
+In initial\_file\_load(), a boolean is returned based on the validity of the config JSON file. If the file doesn't exist, or there is a parse error, a false is returned. In the last portion of the function, it checks to make sure the typing is correct, returning a false if the value types are parsed to be incorrect.
+
+In load\_file\_values(), the \_settings object is loaded with the data - the data is read from the private \_doc object.
+
+In populate\_with\_defaults(), the \_settings object is loaded with default set values.
+
+In save\_file(bool create\_new), the private \_settings file is written to a file in a JSON format, overwriting the current config JSON file. The create\_new bool is used to flag whether it is the first save (the first creation/new creation). By default, this is flagged as false - when it is flagged false, this function will create a copy of the previous config and save it as a backup (json\_backup extension).~\\~\\
+
+
+\subsection{DatabaseHandler}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/databasehandler_uml.eps}
+    \caption{DatabaseHandler Class Diagram}
+\end{figure}~\\
+
+The Database Class mainly handles the Database Operations side of things for the application.\\
+
+
+\textbf{databasehandler.h}~\\
+
+The DatabaseHandler constructor is declared as accepting a connection string. Several database-related operations are declared, alongside a unique\_ptr for the connection to the database, alongside a declared enum, object and matching map, and finally, a mutex to make sure database operations are handled synchronously.~\\~\\
+
+
+\textbf{databasehandler.cpp}~\\
+
+The DatabaseHandler constructor is defined as accepting a connection string. This is used to create a unique\_ptr for the pqxx connection. Then, a nontransaction operation is declared, which is used to push the defined, prepared statements into the database connection. 
+
+The rest of the functions in the class are C++ wrapper functions for pqxx (PostgreSQL C++ Wrapper Library) database operations. These are for various insertion operations, with the exception being a deletion operation, being used to clear the table and load in the categories into the database.~\\~\\
+
+\subsection{Main}
+
+\textbf{main.cpp}~\\
+
+The main.cpp is the main function, or point of execution. Before the application is fully executed, a perform\_additional\_prestart\_actions() function is called, which is defined (and will be explained) in the RecycleM8 class.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.48\textwidth]{images/sourcecode/main_cpp.eps}
+    \caption{main.cpp}
+\end{figure}~\\
+
+The main function is kept simple, and everything happens within the called classes - in this case, the RecycleM8 class.~\\~\\
+
+\subsection{OpenCVHandler}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/opencvhandler_uml.eps}
+    \caption{OpenCVHandler Class Diagram}
+\end{figure}~\\
+
+The OpenCVHandler Class mainly handles the OpenCV and Inference side of things for the application. As the application's central focus is on this class/module, it calls a lot of references to other classes.\\
+
+
+\textbf{opencv\_handler.h}~\\
+
+The OpenCVHandler class' constructor is declared as accepting an int, and a weak\_ptr. The weak\_ptr is a weak pointer to the StatisticsMenu, as it needs to adjust values within the stats menu during scanning/detection.
+
+Then, several functions are declared, a pair of set\_camera\_source functions, an add database\_functionality function that takes a weak pointer, and a camera\_available function, and finally, a start function.~\\~\\
+
+
+\textbf{opencv\_handler.cpp}~\\
+
+The weak\_ptr parameter in the Constructor is of the StatisticsMenu class. This is because it needs to be able to adjust the values within the stats menu (progress bars, counter, etc).
+
+In the constructor, it also loads up the Classifier data into the private variable \_classifier. The set\_camera\_source functions create a cv::VideoCapture object, placing it in the \_camera variable. This will allow the switching of camera sources.
+
+The add\_database\_functionality function accepts a weak\_ptr of the DatabaseHandler class. This is in order to call database related functions, mainly, insert queries when inserting data from the inference. This function is also responsible for loading up the classification data into the database (category/supercategory), deleting the pre-existing data, and replacing it with the new data.
+
+The do\_stats function accepts an integer - referring to the index of the recycling category (ie. 1 for aluminium, 2 for plastic, etc). This will be used in a switch case statement to increment the statistics/progress bars.\\
+
+Finally, the start function is defined, accepting two QLabels as parameters. QLabels refer to the Qt UI Labels - one of them for the actual video feed, and one of them for the classification text. For the video feed, the OpenCV frame is resized and converted into a blob, which is then forwarded into the DNN for object recognition. Based on the classification, the text (second label) displays the text accordingly, as well as inserting into the database if the database feature is enabled.
+
+In order to prevent insertions upon every frame, a rudimentary algorithm is implemented to enforce a "cooldown" period for when new items can be inserted into the database, based on a frame-based timeout. Then, the bounding boxes are drawn on the original frame, which is then converted from a BGRA format, to a RGBA format, and a QImage is created from that color converted frame. Finally, a QPixmap is drawn from that, and the frame label is set to display that QPixmap.~\\~\\
+
+\subsection{RecycleM8}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/recyclem8.eps}
+    \caption{RecycleM8 Class Diagram}
+\end{figure}~\\
+
+The RecycleM8 is the main entry class for the Recycling Assistant application. It mainly handles the UI flow, and ties UI elements to back-end functions.\\
+
+
+\textbf{recyclem8.h}~\\
+
+The RecycleM8 class handles mainly the UI elements, and the general flow. As such, the only other functions it calls aside from the constructor are the perform\_additional\_prestart\_actions() function, and the start\_scanner() function. In terms of variables, it holds a lot of shared pointers to other classes, such as to the Config Handling class, the Database Handling class, and the Statistic Menu class.\\
+
+There also exist a fair amount of private \textit{slot} functions. These are linked to Qt UI elements, triggering the code inside when the action is performed. ~\\~\\
+
+
+\textbf{recyclem8.cpp}~\\
+
+In the constructor of the RecycleM8 class, the UI is setup, and the widget index is set to the start\_menu. In addition, the shared pointers for the other classes (the Config Handling class, and the Statistic Menu class) are assigned. A settings validity check is also performed, changing the value of a private boolean variable based on its result.\\
+
+
+In the perform\_additional\_prestart\_actions() function, if the settings was invalid, simply returns and does not execute the rest of the function. However, if it was valid, it loads the file values, and performs further actions based on the value of some of the config flags. If the database flag was enabled, the database handler shared pointer is created, and the dashboard link is assigned. If the skip start settings flag was enabled, it sets the current widget index to the scanner and starts the scanner, thus skipping straight to the scanner/detection screen.~\\~\\
+
+\subsection{SettingsMenu}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/settingsmenu.eps}
+    \caption{SettingsMenu Class Diagram}
+\end{figure}~\\
+
+The SettingsMenu handles the Settings/Config UI end of the application, saving new values to the config file and syncing changes made on the UI, to the config file.\\
+
+
+\textbf{settingsmenu.h}~\\
+
+The SettingsMenu header declares the constructor, a custom destructor, two public functions, and a weak pointer in addition to the default Ui pointer. The constructor accepts a weak pointer of the ConfigHandler class as a parameter, and a QWidget parent pointer. ~\\~\\
+
+
+\textbf{settingsmenu.cpp}~\\
+
+The SettingsMenu code mainly focuses around handling UI elements, and linking them into actions. A general sync settings display function is used in order to "sync" UI elements to the values that are currently loaded into the settings. This means that the settings menu will not be a fresh state, but will reflect the currently applied settings.\\
+
+In addition, the other settings modify the values in settings, which will be reflected across the application due to the weak pointer link to the ConfigHandler, that other parts of the application also utilize. Every action also calls a save file function, thus writing the new settings state to the config file.~\\~\\
+
+\subsection{StatisticsMenu}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/statisticsmenu.eps}
+    \caption{StatisticsMenu Class Diagram}
+\end{figure}~\\
+
+The StatisticsMenu handles the Statistics UI end of the application, displaying progress bars and a counter designed to represent the type of objects detected. In addition, an extra tab exists to link to the dashboard.\\
+
+
+\textbf{statisticsmenu.h}~\\
+
+The StatisticsMenu header declares the constructor, a custom destructor, two public functions, and a weak pointer in addition to the default Ui pointer. The constructor accepts a weak pointer of the ConfigHandler class as a parameter, and a QWidget parent pointer. There are several incrementing functions declared, with matching variables, a private void function that increases the overall counter. There is a single private slot, used for linking the user to the dashboard.~\\~\\
+
+
+\textbf{statisticsmenu.cpp}~\\
+
+The StatisticsMenu code mainly focuses around displaying and managing the basic statistics of the application. An increment overall counter function is made private, which increases the overall\_counter float - this is called within all the other increment functions. These other increment functions work on the basic premise that if for example, an aluminium can is detected, +1 to the aluminium counter, but +1 to the overall as well. The overall\_counter here is set to a float to prevent loss of precision (ie. 0.5 being converted to 0). The increment overall counter function also performs some basic math to convert these values into a percentage out of 100, rounding up, to be fed into the progressbar values. At the same time, it also increases the label for the overall scan count. This means that it serves a dual function of both incrementing the overall\_counter variable, but also updating the display for all progressbars.\\
+
+The on\_pushButton\_clicked function is only available if there is a set \_dash\_link (dashboard link), set within the settings. If it is not empty, then it will open up browser window linking the user directly to the dashboard link.~\\~\\
+
+
+\section{Use Cases}
+
+\subsection{Opening The Application}~\\
+\texttt{Requirement A}~\\
+\subsubsection{Expected}~\\
+When the application is opened, the main start screen should appear, unless the user has specified that the application should skip straight ahead to the detection screen in the Settings Menu. If the user's config file is corrupted, or it is their first launch, it should also direct the user to the main start screen.~\\
+
+\subsubsection{Result}~\\
+The application meets the specification, and follows the UI flow according to the Expected Result.
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/start.eps}
+    \caption{Default (no skip), or corrupted/first launch}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/nothing_detected.eps}
+    \caption{User specified skip to detection on startup}
+\end{figure}~\\
+
+\subsubsection{Use Case}~\\
+When the application is first opened, the application checks for the existence of a config file, checking the validity of the values inside of the config file if it does exist. Amongst the various config/settings flags, if the user has opted to skip the "startup" phase, they will be skipped directly to the detection screen.\\
+
+However, if they have not, or it is their first start up, the user will be greeted with a basic screen with a "Start" button, which is centered in the middle of the screen, right below the title "Recycling Assistant". Once the user clicks it, they will be brought to one of two screens based on the config validity/existence. \\
+
+If the config file does not exist or is not valid, the user will be brought to a screen in which they will be prompted to regenerate the config file with default parameters. If the user clicks Okay, the settings file will be populated with default parameters, and they will finally be brought to the detection screen. If the user clicks Cancel, they will be brought back to the title/previous screen. \\
+
+If the user's config file existed and was valid, they will also be brought to the detection screen after pressing the "Start" button.~\\
+
+\subsection{Input Support}~\\
+\texttt{Requirement D}~\\
+\subsubsection{Expected}~\\
+The application should be able support a real-time input of a physically or local network connected camera. If the input is not detected/invalid, the user should be notified.~\\
+
+\subsubsection{Result}~\\
+The application meets the specification, and can support both a locally connected physical camera, or a network connected webcam camera. If the input is not detected or valid, the application notifies the user through an error message.
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/camera_source_error.eps}
+    \caption{Camera Not Detected Error Message}
+\end{figure}~\\
+
+\subsubsection{Use Case}~\\
+When the user encounters the detection screen, a scanner instance will be opened based on the camera feed specified. That camera feed will be then displayed as a majority of the window, in real-time, in the correct color. However, if the user's camera source was unavailable or invalid, they will see an error message, notifying them that the application was not able to connect to their specified camera source. It is a modal window, which also greys out the background, so they cannot take any action without acknowledging the message. \\
+
+The user is expected to check their settings in the settings menu and use the reconnect context menu action to establish a connection again. Otherwise, they will be looking at a screen that simply notifies the user that the application is not connected to anything.~\\
+
+\subsection{Real Time Analysis}~\\
+\texttt{Requirement E ~ H, L}~\\
+\subsubsection{Expected}~\\
+The application should be able to handle real-time detection, as well as be able to analyze and classify the object, drawing bounding boxes and text where necessary. In the text, some explanation or tip should be included regarding the detected object's recyclability candidacy. If there are multiple objects detected in the frame, they must also be drawn appropriately.
+
+The application should also showcase additional statistics, such as the confidence level/score of the detected object/inference result, in order for insertion into database.~\\
+
+\subsubsection{Result}~\\
+The application meets the specification, using a frozen SSD MobileNet v2 inference graph in order to handle real-time detection/inference. It classifies the object based on the visual input, and draws a bounding box and uses a QLabel to write out the corresponding text based on the returned inference data - the user receives textual feedback based on the object detected. In addition, the confidence level/score is outputted.\\
+
+Based on the detected object, a stored tip defined in the Classifications.JSON file is provided. Multiple object detection is also handled, drawing boxes around several objects where applicable. \\
+
+\subsubsection{Use Case}~\\
+In the detection screen, inference is running on every frame that is processed. When the user points the camera, or the camera is shown an object that the neural network recognizes, an output is shown. The definition "recognizes" refers to the neural network recognizing an object with a certain degree of certainty (ie. 50\% certain). \\
+
+A bounding box is then drawn around the object, with a corresponding text box showing up in the bottom center, containing information on the detected object, the recycling class, confidence score, and stored tips in relation to the object. This textbox is hidden for when nothing is "recognized", so that there isn't an empty textbox randomly in the feed, but triggered to show upon a recognition event.~\\
+ 
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/successful_detection.eps}
+    \caption{Real Time Analysis}
+\end{figure}~\\
+
+\subsection{Failure to Detect}~\\
+\texttt{Requirement I}~\\
+\subsubsection{Expected}~\\
+If the application does not see an object, it should not trigger a detection event.~\\
+
+\subsubsection{Result}~\\
+In order to meet this specification, the baseline required confidence level in order to trigger a detection event was implemented. As a result, if the confidence level is below a specified level, it will not trigger a detection event.
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/nothing_detected.eps}
+    \caption{No Detection Triggered}
+\end{figure}~\\
+
+\subsubsection{Use Case}~\\
+As specified previously, certain UI elements or bounding boxes are not drawn if the confidence score hits above a set threshold. When this is the case, no bounding boxes are drawn, and the textbox for where the user receives the object's name, class, score, etc, is hidden.~\\
+
+\subsection{Database Functionality}~\\
+\texttt{Requirement J}~\\
+\subsubsection{Expected}~\\
+A local database should be able to be inserted into, storing data such as the timestamp, detected object, object classification, object categorization, confidence level, picture. This database should be accessible by the user to see data such as the most frequently detected category.~\\
+
+\subsubsection{Result}~\\
+In order to meet this specification, the user has the option to link a PostgreSQL database to the application. If the database function is then enabled, when a detection is made, the data from that is inserted into the DB, with the specified data.
+
+It is accessible normally by the user, as it is a PostgreSQL database.
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/code_diagrams/pgadmin_db.eps}
+    \caption{PostgreSQL Admin}
+\end{figure}~\\
+
+\subsubsection{Use Case}~\\
+When the database is enabled, the application pushes a set of base data into the database - the categories and supercategories. For images and detections, this data is pushed upon detections, with a timeout structure. This data can be viewed in the pgAdmin dashboard, or the application's dedicated statistics dashboard. 
+
+\subsection{Statistics}~\\
+\texttt{Requirement K}~\\
+\subsubsection{Expected}~\\
+Basic statistics should be available, such as overall detection count, count per category, etc. Session's detections should be a separate option from overall detections, and a statistics menu should be available via a UI element on the main screen.~\\
+
+\subsubsection{Result}~\\
+The application comes with a built-in session's statistics menu, representing the data with an overall counter and various progressbars. This menu is accessible via a UI context menu element. In the same window, a tab can be utilized to lead the user to the dashboard, where the overall data is shown - which requires the database functionality to be enabled.~\\
+
+\subsubsection{Use Case}~\\
+When the database is enabled, the application pushes a set of base data into the database - the categories and supercategories. For images and detections, this data is pushed upon detections, with a timeout structure. This data can be viewed in the pgAdmin dashboard, or the application's dedicated statistics dashboard. \\
+
+In the application's statistics window, which is accessible through the Statistics Context Menu, the user can open a Statistics window that is non-modal. This means that the user can still see and interact with the main window with the statistics window open. \\
+
+In the Session Stats, there is a "Session Scan Count" label, and four progress bars with percentage labels below that, titled "Categorical Scan Count". For example, if a Plastic Bottle is scanned, the Session Scan Count will be incremented, and the Plastic progress bar will be incremented in accordance to how many items scanned so far, were plastic.\\
+
+In the Overall Stats tab, the user will see text notifying the user that the database function needs to be enabled, and a button below the text. The button will lead the user to the dashboard - opening the browser, and linking directly to the dashboard link set in the config.\\
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/filled_session_stats.eps}
+    \caption{Basic In-App Statistics}
+\end{figure}~\\
+
+\newpage
+\subsection{Settings}~\\
+\texttt{Requirement B}~\\
+\subsubsection{Expected}~\\
+The application should come with a set of default or baseline settings, which should be editable through a settings context menu button.~\\
+
+\subsubsection{Result}~\\
+The application meets the specification, and has an implemented a settings context menu button, and a settings window in which the user is able to change their settings.
+
+The application does come with default settings, allowing the user on first startup to generate a config file with default parameters, or also allowing the user to revert to default settings in the event that their config file seems to be either invalid, or corrupted.
+
+While data corruption/invalidity is dealt with with the prompt to generate new default parameters, whenever the file is written to, a backup is made of the previous settings - this fits in line with the requirements laid out in Requirement B.~\\
+
+\subsubsection{Use Case}~\\
+The settings window is accessible through the main windows' context menus. Once it is open, there are three tabs, one for Application related settings, OpenCV related settings, and finally, Database related settings. In the OpenCV tab, there is a group of two radio buttons, specifying between physical, or web connected cameras. Based on this selection, the OpenCV connection will be opened using the value specified in the below index spinner (if physical is selected), or the value specified in the below text field (if webcam is selected).\\
+
+In the Application Settings tab, there is a single checkbox option available, related to the start sequence of this application. If this is toggled, the application will skip the start sequence - skipping directly to the detection screen upon application startup. If this is not toggled, the application will go through the normal start, going to the "title" screen, requiring the user to press the "Start" button to continue onto the detection screen.\\
+
+In the Database Settings tab, there is a single checkbox option available, related to the database portion of the application. If this is toggled, the application will link with the database specified in the connection string parameter in the config, causing detections to trigger insert queries. This requires a database to be installed, and enabled.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/settings_alert.eps}
+    \caption{Generate Default Settings}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/app_settings.eps}
+    \caption{Application Related Settings}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/adjust_settings.eps}
+    \caption{Adjust Settings Window}
+\end{figure}~\\
+
+\newpage
+\subsection{Exiting the Application}~\\
+\texttt{Requirement C}~\\
+\subsubsection{Expected}~\\
+The user should be able to exit the application normally, and smoothly, with minimal chance of data corruption.~\\
+
+\subsubsection{Result}~\\
+The application meets this basic specification, allowing the user to quickly exit the application without any interruption or confirmation message required. The Settings Implementation reduces chances of data corruption, also allowing the opportunity for the user to recover their data in the event that it does get corrupted.~\\
+
+\subsubsection{Use Case}~\\
+When the user has control of the main application, the user may click the "x" at the top right corner to exit out of the application at any time. The only conditions where this is not fully applicable, is where a modal window is open (ie. Error message popup).\\
 
 \end{document}
