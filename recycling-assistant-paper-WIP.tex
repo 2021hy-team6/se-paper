@@ -799,6 +799,10 @@ The application only does INSERT queries into the SQL, for which PostgreSQL was 
 
 The front-end, is where the final frame - post-inference, with the object marked, is displayed. This is heavily intertwined with the front-end's Qt instance, as Qt's UI Labels are used in order to display the result of the inference (object name, class type, confidence, etc). In addition, as Qt is the main UI framework, it is used to handle the majority of user interaction, application side, such as the handling of settings, or showing session scan stats.\\
 
+Dashboard service consists of intermediate server and front-end application. The intermediate server basically monitors the connectivity of PostgreSQL and manages connection pools. After confirming the connection is valid, it receives the  requests according to the prescribed form and executes query with the corresponding conditions. It fetches the result set and parses into JSON format.\\
+
+The dashboard's front-end has a role to obtain the request of statistics inquiry from the user and provide the analysis information for the responses. The formats of visualization include line chart, bar chart, table and numerical figures.\\
+
 The following diagram shows our overall architecture and application ecosystem for this project.\\
 
 \begin{figure}[h]
@@ -807,6 +811,7 @@ The following diagram shows our overall architecture and application ecosystem f
     \caption{Overall System Diagram}
 \end{figure}~\\
 
+\newpage
 \subsection{Database Architecture}
 The following diagram shows our architecture for the database, and the source of the database data (insertion sources). Note that the dashboard is not showcased here, as the dashboard mainly only does selections from the database, and is not a source of data.
 
@@ -861,6 +866,19 @@ settingsmenu.cpp
 settingsmenu.ui
 \newline
 \\ \hline
+\end{tabular}
+\label{tab1}
+\end{center}
+\end{table}
+
+
+\newpage
+\begin{table}[htbp!]\normalsize
+\begin{center}
+\begin{tabular}{|p{1.5cm}|p{2.2cm}|p{3.9cm}|}
+\hline
+\textbf{Class} & \textbf{\textit{Directory}}& \textbf{\textit{Filename}}\\
+\hline
 Statistics Menu & recycleAssistant & statisticsmenu.h
 \newline
 \newline
@@ -902,7 +920,46 @@ frozen\_taco.pbtxt
 \end{center}
 \end{table}
 
+The components related to dashboard are described in the following diagram.
 
+\begin{table}[htbp!]\normalsize
+\begin{center}
+\begin{tabular}{|p{1.8cm}|p{2.2cm}|p{3.6cm}|}
+\hline
+\textbf{Class} & \textbf{\textit{Directory}}& \textbf{\textit{Filename}}\\
+\hline
+Intermediate Server & dashboard & entrypoint.py
+\newline
+server.py
+\newline
+\\ \hline
+Inquiry & dashboard & db.py
+\newline
+stats.py
+\newline
+stats\_sql.py
+\newline
+\\ \hline
+Layout & front/dashboard & Admin.js
+\newline
+Dashboard.js
+\newline
+\\ \hline
+Stats & front/dashboard & DayCntChart.js
+\newline
+DayRecChart.js
+\newline
+DayTimeChart.js
+\newline
+WeekUsageChart.js
+\newline
+\\ \hline
+\end{tabular}
+\label{tab1}
+\end{center}
+\end{table}
+
+\newpage
 \subsection{Classifier}
 
 \begin{figure}[h]
@@ -1136,6 +1193,21 @@ The StatisticsMenu code mainly focuses around displaying and managing the basic 
 
 The on\_pushButton\_clicked function is only available if there is a set \_dash\_link (dashboard link), set within the settings. If it is not empty, then it will open up browser window linking the user directly to the dashboard link.~\\~\\
 
+\subsection{Dashboard}
+
+\textbf{server.py}~\\
+
+Dashboard's intermediate server has a responsible for interactions between Frontend and PostgreSQL. It receives the request via WSGI framework within the predefined API rules. It communicates with the PostgreSQL through psycopg2 adapter in order to make inquiry to the DBMS. It basically checks the database status and maintain the connection pools created at the launching.~\\
+
+\textbf{stats.py}~\\
+
+Dashboard stats code mainly focuses around interpret the request parameter and executing the query. It decides which prepared statements should be used for given requests and assign proper condition variables of period range or another specific condition of the analysis. After preparing the query statement, it obtains an available connection from the connection pool. After finishing the execution, it parses the result into dictionary and JSON format. It returns the no longer used connection to the pool.~\\
+
+\textbf{Dashboard.js}~\\
+
+It maintains the parameters from the user and contains the overall visualized reports and their layout. It holds the statDate variable to determine the analyzing years, months and days. When a user tries to inquiry the dashboard, it makes multiple requests to the intermediate server. Those requests are handled in asynchronously with their own callback functions for each.\\
+
+The dashboard layout consists of multiple line graphs, bar graphs and tables. All graphs and tables are located in the sections, with a header and footer for each box areas. Chart components have their own visualization options such as background color, line style and grid style. This configuration is applied when the graph is drawn on the canvas element.~\\~\\
 
 \section{Use Cases}
 
@@ -1318,5 +1390,106 @@ The application meets this basic specification, allowing the user to quickly exi
 
 \subsubsection{Use Case}~\\
 When the user has control of the main application, the user may click the "x" at the top right corner to exit out of the application at any time. The only conditions where this is not fully applicable, is where a modal window is open (ie. Error message popup).\\
+
+\subsection{Dashboard}~\\
+\texttt{Requirement P, Q}~\\
+\subsubsection{Expected}~\\
+The user should be able to see the detailed statistics that analyzed data within the given conditions.~\\
+
+\subsubsection{Result}~\\
+In order to display the statistics, the intermediate server and front-end application are launched before the usage. The connections between PostgreSQL and intermediate server, and between intermediate server and front-end are linked successfully. When there is the actual request to load the dashboard, All graphs and tables should be displayed with correct precision and range.~\\
+
+\subsubsection{Use Case}~\\
+Before the user wants to look up the dashboard, an interactive server has been already running. As the main application is opened, the connections to the PostgreSQL is succeeded and the connection pool is created by the set number in the configuration file. If it is failed to connect the DBMS, it prompts the fail log on the console and waits until the new request is received.\\
+
+While the intermediate server is launching, the front-end application is also started. It reads the predefined intermediate server's address and port and keeps them for the future operations. After the all steps of start up are proceeded, the dashboard leads the access user to the admin layout page.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_init_page.eps}
+    \caption{Initial Dashboard Window}
+\end{figure}
+
+The initial dashboard page's statistical parameter is configured for the current day and hour. The current time is determined by the time of the browser which the user accesses through. It renders the analysis date in the middle of the page and its format contains year, month and day.\\
+
+When a user try to change the analysis date, it can be done by two ways. The first method is click the box of date. The page will shows the calendar of the configured date's month. A user can change the months by clicking the arrows located in both left and right side. The year can changed by clicking the dropdown box on the top of calendar. After the user finds the day and clicks the it on the calendar, the chosen date's year, month and day are applied to the box of analysis date. Another way is clicking one of numbers in the box, then typing the year, month and day matching the date format.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_change_date.eps}
+    \caption{Initial Dashboard Window}
+\end{figure}
+
+When the user changes the analysis date or initially opens the dashboard, the requests for updating the graphs and tables are sent to the intermediate server. All data required to update the window is sent for each dataset in asynchronously. After the intermediate server receives the requests from the front-end application, it parses the parameters enclosed in the request path. The string format of statistics date will be parsed as yyyyMMdd format. If the type or format of parameter is not matched, it will be assigned to the default variable.\\
+
+After the server module finishes to parse the parameter and finds the statistics functions corresponding to the requests, the methods of stats module are called. The stats function initially finds a specific prepared statement in the stats\_sql module. It obtains a connection from the pool. If the execute statement is SELECT query, it also obtains a cursor from the connection.\\
+
+After all preparations are ready to execute a query, db module calls the execute method of the connection. If the statement is UPDATE clause, the transaction is commited if the call is successful. For the SELECT query, it fetches the result set to the cursor obtained before. All rows in the cursor are converted into the list of dict object. If there is no result, empty array is returned.\\
+
+The dictionary type of analysis result is parsed in JSON format on the intermediate server. The front-end application receives the response in JSON. If the received data is used in the line or bar graph, it is passed to the corresponding Chart object's constructor. Then the object assigns the attributes of x, y labels and values. The chart option is also assigned inside the constructor.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_response_json.eps}
+    \caption{JSON from Intermediate Server}
+\end{figure}
+
+The created chart objects are displayed for each assigned layout. If the chart has no available values, it shows empty space. Otherwise, the chart first limits the y axis range encompassing y values, and puts all lines or bars on the matching x axis for each. When a user hovers the dot or box of graph, it displays the label name, x value and y value until the mouse out event.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_hover.eps}
+    \caption{Hover on the graph}
+\end{figure}
+
+The graph of daily counts per super categories is shown in the line plot. To make an analysis, it collects all images inserted during the 0 AM to 23 PM of the analysis date. For each captures, the statistics inquiries the corresponding detections that contain the detected objects' names and finds their super categories' names. After all information is found, it takes top 3 most detected super categories' names and their counts per hour. If there is no detection of the specific hour and super category, the empty rows' counts are considered as zero. Before returning the analysis result, it converts the y axis basis to the x axis format in order to fit the matching front-end's format.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_day_cnt_chart.eps}
+    \caption{Chart of Detected Super Categories}
+\end{figure}
+
+Weekly usage chart has the number of captured images for a week. The start day of the duration is 7 days before the analysis date. So there are 7 bars on the graph. If some days don't have any images, those days are considered as zero usages.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_week_usage_chart.eps}
+    \caption{Chart of Weekly Usages}
+\end{figure}
+
+Recycle rate chart indicates the percentage of recyclable objects from all detection. The statistical unit is 3 hours, 8 units in a day, and it determines whether the detection is recyclable or not through the field of 'recyclable' in the super category. If the detection is classified to the Unrecognized one, it is considered as non-recyclable object. If there is no detection the given hours, it considers the recyclable rate as zero. The percentages have the precision of 2, considering the multiply of 100.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_rec_chart.eps}
+    \caption{Chart of Recyclable Rates}
+\end{figure}
+
+When the user loads the graph of detection time, it calculates the average milliseconds of prediction time in day. It adds all elapsed time of images every 3 hours, and divides with the total counts for each. If there is no image in given hours, the detection time is zero. When it displays the graph, y labels and horizontal grid lines are removed. the numeric figures are rounded in the precision of 3.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_time_chart.eps}
+    \caption{Chart of Detection Time}
+\end{figure}
+
+For the table format of statistics, the received data is mapped for the entire rows. If there is no responses, the empty row is assigned and there is no rows on the window. All numeric figures are aligned to the right side on the window, while the texts are formatted in the center.\\
+
+The super category list of monthly comparison is decided upon the total counts of detected objects for each super category. The only top 5 most detected super categories in this month are displayed. The differences are calculated from the last month's counts and this month's counts. If there is no count for the previous month's super category, it is considered as zero.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_comp_table.eps}
+    \caption{Table of Monthly Comparison}
+\end{figure}
+
+To provide the table of most detected objects, it first takes all detected images within the year of analysis date. All detections included in the list of images are gathered and they are mapped with category list through their own object identifiers. The appearing numbers of for each detected object's name are counted for a year. After counting, take top 5 most counted object names and find the super categories' names for all objects. The appearing ratios are also calculated, count divided by the total number of images given period. The numeric ratios are rounded with the precision of 2, and displayed with the percentage annotations behind. If the number of result rows is less than 5, the table shows all of them.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.35\textwidth]{images/dashboard_ann_table.eps}
+    \caption{Table of Monthly Comparison}
+\end{figure}
 
 \end{document}
