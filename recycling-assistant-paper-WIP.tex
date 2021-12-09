@@ -1417,7 +1417,7 @@ When a user try to change the analysis date, it can be done by two ways. The fir
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.35\textwidth]{images/dashboard_change_date.eps}
-    \caption{Initial Dashboard Window}
+    \caption{Dashboard Change Date}
 \end{figure}
 
 When the user changes the analysis date or initially opens the dashboard, the requests for updating the graphs and tables are sent to the intermediate server. All data required to update the window is sent for each dataset in asynchronously. After the intermediate server receives the requests from the front-end application, it parses the parameters enclosed in the request path. The string format of statistics date will be parsed as yyyyMMdd format. If the type or format of parameter is not matched, it will be assigned to the default variable.\\
